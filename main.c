@@ -88,7 +88,6 @@ static void cli_about()
 
 static void cli_show(CassSession *session)
 {
-	printf("in cli_show\n");
 	const char *query = "SELECT * FROM system_schema.keyspaces;";
 	CassResult *result = execute_query(session, query);
     CassIterator* row_iterator = cass_iterator_from_result(result);
@@ -105,62 +104,130 @@ static void cli_show(CassSession *session)
 
 static void cli_list(CassSession *session)
 {
-	printf("in cli_list\n");
 	char query[100];
-	strcpy(query, "select table_name from system_schema.tables where keyspace_name = '");
+	strcpy(query, "select * from system_schema.tables where keyspace_name = '");
 	strcat(query, currentKeyspace);
 	strcat(query, "';");
     CassResult *result = execute_query(session, query);
-    if (cass_result_row_count(result) == 0) {
-        printf("%s %s\n", "No tables in keyspace", currentKeyspace);
+    if (result != NULL) {
+        if (cass_result_row_count(result) == 0) {
+            printf("%s %s\n", "No tables in keyspace", currentKeyspace);
+        }
+        CassIterator* row_iterator = cass_iterator_from_result(result);
+        while (cass_iterator_next(row_iterator)) {
+            size_t i = 0;
+            const char *svalue = "";
+            size_t size;
+            const CassRow* row = cass_iterator_get_row(row_iterator);
+            const CassValue *value = cass_row_get_column_by_name(row, "table_name");
+            cass_value_get_string(value, &svalue, &size);
+            printf("%s\n", svalue);
+
+        }
+        cass_iterator_free(row_iterator);
+    } else {
+        printf("%s\n", "please choose a keyspace");
     }
-    CassIterator* row_iterator = cass_iterator_from_result(result);
-    while (cass_iterator_next(row_iterator)) {
-        size_t i = 0;
-        const char *svalue;
-        size_t size = sizeof(svalue);
-        const CassRow* row = cass_iterator_get_row(row_iterator);
-        const CassValue *value = cass_row_get_column(row, i);
-        cass_value_get_string(value, &svalue, &size);
-        printf("%s %s\n", svalue, "::");
-    }
-    cass_iterator_free(row_iterator);
 }
 
 static void cli_use(CassSession *session)
 {
-	printf("in cli_use\n");
-	//check if current keyspace and current table are in database
     char query[500];
-    /*size_t i = 0;
-    const char *svalue;
-    size_t size = sizeof(svalue);*/
     strcpy(query, "CREATE KEYSPACE IF NOT EXISTS ");
 	strcat(query, currentKeyspace);
 	strcat(query, " WITH REPLICATION = {'class' : 'SimpleStrategy', 'replication_factor' : 1};");
-	//printf("%s %s\n", "query1: ", query);
     CassResult *result = execute_query(session, query);
-    //printf("%s\n", "after query1");
-    //check if table exists, create it if not
+
     char query2[500];
     strcpy(query2, "CREATE TABLE IF NOT EXISTS ");
     strcat(query2, currentKeyspace);
     strcat(query2, ".");
     strcat(query2, currentTable);
     strcat(query2, " (key int PRIMARY KEY, value text);");
-    //printf("%s %s\n", "query2: ", query2);
+
     CassResult *result2 = execute_query(session, query2);
 
 }
 
-static void cli_get()
+static void cli_get(CassSession *session, char *key)
 {
-	printf("in cli_get\n");
+    char query[500];
+    strcpy(query, "select * from ");
+    strcat(query, currentKeyspace);
+    strcat(query, ".");
+    strcat(query, currentTable);
+    CassResult *result = execute_query(session, query);
+    if (result != NULL) {
+        CassIterator* row_iterator = cass_iterator_from_result(result);
+        while (cass_iterator_next(row_iterator)) {
+            size_t i = 0;
+            const char *svalue = "";
+            size_t size;
+            const CassRow* row = cass_iterator_get_row(row_iterator);
+            const CassValue *value = cass_row_get_column_by_name(row, key);
+            CassValueType type = cass_value_type(value);
+            printf("%s\n", "before checking types");
+            if (type == CASS_VALUE_TYPE_INT) {
+                cass_int32_t i;
+                cass_value_get_int32(value, &i);
+                printf("%d", i);
+            } else if (type == CASS_VALUE_TYPE_BOOLEAN) {
+                cass_bool_t b;
+                cass_value_get_bool(value, &b);
+                if (b) {
+                    printf("%s\n", "True");
+                } else {
+                    printf("%s\n", "False");
+                }
+            } else if (type == CASS_VALUE_TYPE_DOUBLE) {
+                cass_double_t d;
+                cass_value_get_double(value, &d);
+                printf("%f\n", d);
+            } else if (type == CASS_VALUE_TYPE_TEXT || type == CASS_VALUE_TYPE_ASCII || type == CASS_VALUE_TYPE_VARCHAR) {
+                const char *s;
+                size_t size;
+                cass_value_get_string(value, &s, &size);
+                printf("%s\n", s);
+            } else if (type == CASS_VALUE_TYPE_UUID) {
+                CassUuid u;
+                char s[CASS_UUID_STRING_LENGTH];
+                cass_value_get_uuid(value, &u);
+                cass_uuid_string(u, s);
+                printf("%s\n", s);
+            } else {
+                if (cass_value_is_null(value)) {
+                    printf("%s\n", "Null");
+                } else {
+                    printf("%s\n", "can not handle this type");
+                }
+            }
+        }
+        cass_iterator_free(row_iterator);
+    } else {
+        printf("%s\n", "please choose a keyspace and table");
+    }
+
 }
 
-static void cli_insert()
+static void cli_insert(CassSession *session, char *key, char * val)
 {
 	printf("in cli_insert\n");
+	char query[500];
+	/*strcpy(query, "select type from system_schema.columns where keyspace_name = '");
+	strcat(query, currentKeyspace);
+	strcat(query, )
+	system_auth' and table_name = 'roles' and column_name = 'role';*/
+	strcpy(query, "insert into ");
+	strcat(query, currentKeyspace);
+	strcat(query, ".");
+	strcat(query, currentTable);
+	strcat(query, "(");
+	strcat(query, key);
+	strcat(query, ") values (");
+	strcat(query, val);
+	strcat(query, ");");
+	CassResult *result = execute_query(session, query);
+
 }
 
 static void cli_help()
@@ -233,26 +300,37 @@ void cli(CassSession *session)
             nextarg(cmdline, &pos, " ", cmd);
             const char *dot = ".";
             const char *space = " ";
-            memset(currentKeyspace, 0, strlen(currentKeyspace));
-            memset(currentTable, 0, strlen(currentTable));
             char *keyspace = strtok(cmd, dot);
             //printf("%s %s\n", "keyspace: ", keyspace);
             char *table = strtok(NULL, space);
             //printf("%s %s %s\n", "table: ", table, "::");
+            memset(currentKeyspace, 0, strlen(currentKeyspace));
+            memset(currentTable, 0, strlen(currentTable));
             strcpy(currentKeyspace, keyspace);
             strcpy(currentTable, table);
-            printf("%s %s %s\n", "current table: ", currentTable, "::");
+            //printf("%s %s %s\n", "current table: ", currentTable, "::");
 			cli_use(session);
 			continue;
 		}
 
         if (strcmp(cmd, "get") == 0){
-			cli_get();
+            nextarg(cmdline, &pos, " ", cmd);
+			cli_get(session, cmd);
 			continue;
 		}
 
         if (strcmp(cmd, "insert") == 0){
-			cli_insert();
+            char key[100];
+            char val[100];
+
+            nextarg(cmdline, &pos, " ", cmd);
+            strcpy(key, cmd);
+            nextarg(cmdline, &pos, " ", cmd);
+            strcpy(val, cmd);
+            printf("%s %s\n", "key: ", key);
+            printf("%s %s\n", "val: ", val);
+
+			cli_insert(session, key, val);
 			continue;
 		}
 	}

@@ -5,8 +5,10 @@
 #include "config.h"
 #include <cassandra.h>
 
-//Cassandra stuff
+char currentKeyspace[20];
+char currentTable[20];
 
+//Cassandra stuff
 void print_error(CassFuture* future) {
   const char* message;
   size_t message_length;
@@ -37,7 +39,7 @@ CassError connect_session(CassSession* session, const CassCluster* cluster) {
   printf("%s\n", "connect session done");
 }
 
-CassIterator *execute_query(CassSession* session, const char *query) {
+CassResult *execute_query(CassSession* session, const char *query) {
 
     char return_arr[100];
 
@@ -55,7 +57,7 @@ CassIterator *execute_query(CassSession* session, const char *query) {
         print_error(future);
     }
     //get result
-    const CassResult* result = cass_future_get_result(future);
+    CassResult* result = cass_future_get_result(future);
     //check result error
     if (result == NULL) {
         /* Handle error */
@@ -66,8 +68,7 @@ CassIterator *execute_query(CassSession* session, const char *query) {
     //free future
     cass_future_free(future);
     //Iterator
-    CassIterator* row_iterator = cass_iterator_from_result(result);
-    return row_iterator;
+    return result;
 }
 
 //end of cassandra stuff
@@ -89,7 +90,8 @@ static void cli_show(CassSession *session)
 {
 	printf("in cli_show\n");
 	const char *query = "SELECT * FROM system_schema.keyspaces;";
-	CassIterator* row_iterator = execute_query(session, query);
+	CassResult *result = execute_query(session, query);
+    CassIterator* row_iterator = cass_iterator_from_result(result);
     while (cass_iterator_next(row_iterator)) {
         const char *svalue;
         size_t size = sizeof(svalue);
@@ -101,14 +103,54 @@ static void cli_show(CassSession *session)
     cass_iterator_free(row_iterator);
 }
 
-static void cli_list()
+static void cli_list(CassSession *session)
 {
 	printf("in cli_list\n");
+	char query[100];
+	strcpy(query, "select table_name from system_schema.tables where keyspace_name = '");
+	strcat(query, currentKeyspace);
+	strcat(query, "';");
+    CassResult *result = execute_query(session, query);
+    if (cass_result_row_count(result) == 0) {
+        printf("%s %s\n", "No tables in keyspace", currentKeyspace);
+    }
+    CassIterator* row_iterator = cass_iterator_from_result(result);
+    while (cass_iterator_next(row_iterator)) {
+        size_t i = 0;
+        const char *svalue;
+        size_t size = sizeof(svalue);
+        const CassRow* row = cass_iterator_get_row(row_iterator);
+        const CassValue *value = cass_row_get_column(row, i);
+        cass_value_get_string(value, &svalue, &size);
+        printf("%s %s\n", svalue, "::");
+    }
+    cass_iterator_free(row_iterator);
 }
 
-static void cli_use()
+static void cli_use(CassSession *session)
 {
 	printf("in cli_use\n");
+	//check if current keyspace and current table are in database
+    char query[500];
+    /*size_t i = 0;
+    const char *svalue;
+    size_t size = sizeof(svalue);*/
+    strcpy(query, "CREATE KEYSPACE IF NOT EXISTS ");
+	strcat(query, currentKeyspace);
+	strcat(query, " WITH REPLICATION = {'class' : 'SimpleStrategy', 'replication_factor' : 1};");
+	//printf("%s %s\n", "query1: ", query);
+    CassResult *result = execute_query(session, query);
+    //printf("%s\n", "after query1");
+    //check if table exists, create it if not
+    char query2[500];
+    strcpy(query2, "CREATE TABLE IF NOT EXISTS ");
+    strcat(query2, currentKeyspace);
+    strcat(query2, ".");
+    strcat(query2, currentTable);
+    strcat(query2, " (key int PRIMARY KEY, value text);");
+    //printf("%s %s\n", "query2: ", query2);
+    CassResult *result2 = execute_query(session, query2);
+
 }
 
 static void cli_get()
@@ -183,12 +225,24 @@ void cli(CassSession *session)
 		}
 
 		if (strcmp(cmd, "list") == 0){
-			cli_list();
+			cli_list(session);
 			continue;
 		}
 
         if (strcmp(cmd, "use") == 0){
-			cli_use();
+            nextarg(cmdline, &pos, " ", cmd);
+            const char *dot = ".";
+            const char *space = " ";
+            memset(currentKeyspace, 0, strlen(currentKeyspace));
+            memset(currentTable, 0, strlen(currentTable));
+            char *keyspace = strtok(cmd, dot);
+            //printf("%s %s\n", "keyspace: ", keyspace);
+            char *table = strtok(NULL, space);
+            //printf("%s %s %s\n", "table: ", table, "::");
+            strcpy(currentKeyspace, keyspace);
+            strcpy(currentTable, table);
+            printf("%s %s %s\n", "current table: ", currentTable, "::");
+			cli_use(session);
 			continue;
 		}
 

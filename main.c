@@ -167,11 +167,15 @@ static void cli_get(CassSession *session, char *key)
             const CassValue *value = cass_row_get_column_by_name(row, key);
             CassValueType type = cass_value_type(value);
             printf("%s\n", "before checking types");
-            if (type == CASS_VALUE_TYPE_INT) {
+            if (cass_value_is_null(value)) {
+                    printf("%s\n", "null");
+            } else if (type == CASS_VALUE_TYPE_INT) {
+                //printf("%s\n", "int");
                 cass_int32_t i;
                 cass_value_get_int32(value, &i);
-                printf("%d", i);
+                printf("%d\n", i);
             } else if (type == CASS_VALUE_TYPE_BOOLEAN) {
+                //printf("%s\n", "bool");
                 cass_bool_t b;
                 cass_value_get_bool(value, &b);
                 if (b) {
@@ -180,26 +184,25 @@ static void cli_get(CassSession *session, char *key)
                     printf("%s\n", "False");
                 }
             } else if (type == CASS_VALUE_TYPE_DOUBLE) {
+                //printf("%s\n", "double");
                 cass_double_t d;
                 cass_value_get_double(value, &d);
                 printf("%f\n", d);
             } else if (type == CASS_VALUE_TYPE_TEXT || type == CASS_VALUE_TYPE_ASCII || type == CASS_VALUE_TYPE_VARCHAR) {
+                printf("%s\n", "string");
                 const char *s;
                 size_t size;
                 cass_value_get_string(value, &s, &size);
                 printf("%s\n", s);
             } else if (type == CASS_VALUE_TYPE_UUID) {
+                //printf("%s\n", "uuid");
                 CassUuid u;
                 char s[CASS_UUID_STRING_LENGTH];
                 cass_value_get_uuid(value, &u);
                 cass_uuid_string(u, s);
                 printf("%s\n", s);
             } else {
-                if (cass_value_is_null(value)) {
-                    printf("%s\n", "Null");
-                } else {
-                    printf("%s\n", "can not handle this type");
-                }
+                printf("%s\n", "can not handle this type");
             }
         }
         cass_iterator_free(row_iterator);
@@ -211,28 +214,29 @@ static void cli_get(CassSession *session, char *key)
 
 static void cli_insert(CassSession *session, char *key, char * val)
 {
-	printf("in cli_insert\n");
-	char query[500];
-	/*strcpy(query, "select type from system_schema.columns where keyspace_name = '");
-	strcat(query, currentKeyspace);
-	strcat(query, )
-	system_auth' and table_name = 'roles' and column_name = 'role';*/
-	strcpy(query, "insert into ");
-	strcat(query, currentKeyspace);
-	strcat(query, ".");
-	strcat(query, currentTable);
-	strcat(query, "(");
-	strcat(query, key);
-	strcat(query, ") values (");
-	strcat(query, val);
-	strcat(query, ");");
-	CassResult *result = execute_query(session, query);
-
+    //printf("%s\n", currentKeyspace);
+    if (strcmp(currentKeyspace, "") != 0 && strcmp(currentTable, "") != 0) {
+        char query[500];
+        strcpy(query, "insert into ");
+        strcat(query, currentKeyspace);
+        strcat(query, ".");
+        strcat(query, currentTable);
+        strcat(query, "(");
+        strcat(query, key);
+        strcat(query, ") values (");
+        strcat(query, val);
+        strcat(query, ");");
+        CassResult *result = execute_query(session, query);
+        if (result == NULL) {
+            printf("%s\n", "invalid input");
+        }
+    } else {
+        printf("%s\n", "please choose a keyspace and table");
+    }
 }
 
 static void cli_help()
 {
-	printf("in cli_help\n");
 	return;
 }
 
@@ -327,8 +331,8 @@ void cli(CassSession *session)
             strcpy(key, cmd);
             nextarg(cmdline, &pos, " ", cmd);
             strcpy(val, cmd);
-            printf("%s %s\n", "key: ", key);
-            printf("%s %s\n", "val: ", val);
+            //printf("%s %s\n", "key: ", key);
+            //printf("%s %s\n", "val: ", val);
 
 			cli_insert(session, key, val);
 			continue;
@@ -338,6 +342,11 @@ void cli(CassSession *session)
 
 int main(int argc, char**argv)
 {
+    memset(currentKeyspace, 0, strlen(currentKeyspace));
+    memset(currentTable, 0, strlen(currentTable));
+    strcpy(currentKeyspace, "");
+    strcpy(currentTable, "");
+
     CassCluster* cluster = create_cluster();
     CassSession* session = cass_session_new();
     CassFuture* close_future = NULL;
